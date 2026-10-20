@@ -41,7 +41,7 @@ The initial bindings follow the conventional `dwm` defaults, using **Alt (Mod1)*
 | `Alt + Shift + Enter` | Launch terminal |
 | `Alt + Shift + q` | Quit dreamWM |
 
-The terminal command defaults to `st`; set `DREAMWM_TERMINAL` to another executable if desired (for example, `DREAMWM_TERMINAL=xterm`). The application menu requires `dmenu_run`. Keyboard keycodes currently assume the conventional US XKB layout.
+The terminal command defaults to `st`; set `DREAMWM_TERMINAL` to another executable if desired (for example, `DREAMWM_TERMINAL=xterm`). The application menu requires `dmenu_run`. Keyboard keycodes currently assume the conventional US XKB layout. dreamWM publishes `_NET_SUPPORTING_WM_CHECK` and `_NET_WM_NAME` so X11 utilities can identify the window manager.
 
 ## Status
 
