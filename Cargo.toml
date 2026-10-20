@@ -1,0 +1,15 @@
+[package]
+name = "dreamwm"
+version = "0.1.0"
+edition = "2021"
+description = "A small, dwm-inspired X11 window manager written in Rust"
+license = "MIT"
+
+[dependencies]
+x11rb = "0.13"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
