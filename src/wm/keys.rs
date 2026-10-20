@@ -3,7 +3,7 @@
 use std::{error::Error, process::Command};
 use x11rb::{connection::Connection, protocol::xproto::{ConnectionExt as _, GrabMode, KeyButMask, ModMask}};
 use crate::config::*;
-use super::DreamWm;
+use super::{bar::SearchBar, DreamWm};
 
 impl DreamWm {
     pub(super) fn grab_keys(&self) -> Result<(), Box<dyn Error>> {
@@ -80,7 +80,7 @@ impl DreamWm {
                 self.arrange()?;
             }
             (KEY_SPACE, true) => self.toggle_floating()?,
-            (KEY_P, false) => self.spawn_command("dmenu_run"),
+            (KEY_P, false) => self.bar.open(&self.conn, self.root)?,
             (key, shifted) if (KEY_1..KEY_1 + TAG_COUNT).contains(&key) => {
                 let tag = key - KEY_1;
                 if shifted {
