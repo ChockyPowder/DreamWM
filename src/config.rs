@@ -7,6 +7,7 @@ pub(crate) const TAG_COUNT: u8 = 9;
 // Default US keyboard keycodes. A keysym-based keymap is a follow-up task;
 // these match the conventional Xorg/XKB US layout.
 pub(crate) const KEY_Q: u8 = 24;
+pub(crate) const KEY_C: u8 = 54;
 pub(crate) const KEY_P: u8 = 33;
 pub(crate) const KEY_RETURN: u8 = 36;
 pub(crate) const KEY_F: u8 = 41;
