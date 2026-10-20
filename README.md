@@ -41,7 +41,7 @@ The initial bindings follow the conventional `dwm` defaults, using **Alt (Mod1)*
 | `Alt + Shift + Enter` | Launch terminal |
 | `Alt + Shift + q` | Quit dreamWM |
 
-The terminal command defaults to `xterm`; set `DREAMWM_TERMINAL` to another executable if desired. The application menu requires `dmenu_run`. Keyboard keycodes currently assume the conventional US XKB layout.
+The terminal command defaults to `st`; set `DREAMWM_TERMINAL` to another executable if desired (for example, `DREAMWM_TERMINAL=xterm`). The application menu requires `dmenu_run`. Keyboard keycodes currently assume the conventional US XKB layout.
 
 ## Status
 
