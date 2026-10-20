@@ -82,7 +82,7 @@ impl DreamWm {
         }
         Ok(())
     }
-    fn run(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         eprintln!("dreamWM: running on X11 (early development build)");
         while self.running {
             match self.conn.wait_for_event()? {
