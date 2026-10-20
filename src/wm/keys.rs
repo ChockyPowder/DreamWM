@@ -3,7 +3,7 @@
 use std::{error::Error, process::Command};
 use x11rb::{connection::Connection, protocol::xproto::{ConnectionExt as _, GrabMode, KeyButMask, ModMask}};
 use crate::config::*;
-use super::{bar::SearchBar, DreamWm};
+use super::DreamWm;
 
 impl DreamWm {
     pub(super) fn grab_keys(&self) -> Result<(), Box<dyn Error>> {
