@@ -1,7 +1,7 @@
 //! Keyboard grabs, shortcuts, focus navigation, and child processes.
 
 use std::{error::Error, process::Command};
-use x11rb::{connection::Connection, protocol::xproto::{ConnectionExt as _, GrabMode, KeyButMask, ModMask}};
+use x11rb::{connection::Connection, protocol::{xproto::{AtomEnum, ClientMessageData, ClientMessageEvent, ConnectionExt as _, EventMask, GrabMode, KeyButMask, ModMask}, Event}};
 use crate::config::*;
 use super::DreamWm;
 
@@ -23,6 +23,7 @@ impl DreamWm {
             (KEY_SPACE, ModMask::M1 | ModMask::SHIFT),
             (KEY_P, ModMask::M1),
             (KEY_Q, ModMask::M1 | ModMask::SHIFT),
+            (KEY_C, ModMask::M1 | ModMask::SHIFT),
         ];
         for index in 0..TAG_COUNT {
             bindings.push((KEY_1 + index, ModMask::M1));
@@ -47,6 +48,7 @@ impl DreamWm {
         let shift = state.contains(KeyButMask::SHIFT);
         match (keycode, shift) {
             (KEY_Q, true) => self.running = false,
+            (KEY_C, true) => self.close_focused()?,
             (KEY_J, false) => self.focus_step(1)?,
             (KEY_K, false) => self.focus_step(-1)?,
             (KEY_RETURN, false) => self.zoom()?,
@@ -94,6 +96,31 @@ impl DreamWm {
         self.conn.flush()?;
         Ok(())
     }
+    pub(super) fn close_focused(&self) -> Result<(), Box<dyn Error>> {
+        let Some(window) = self.focused else { return Ok(()) };
+        let protocols = self.conn.intern_atom(false, b"WM_PROTOCOLS")?.reply()?.atom;
+        let delete = self.conn.intern_atom(false, b"WM_DELETE_WINDOW")?.reply()?.atom;
+        let supports_delete = self.conn
+            .get_property(false, window, protocols, AtomEnum::ATOM, 0, 32)?
+            .reply()?
+            .value32()
+            .is_some_and(|atoms| atoms.into_iter().any(|atom| atom == delete));
+        if supports_delete {
+            let event = ClientMessageEvent::new(
+                32,
+                window,
+                protocols,
+                ClientMessageData::from([delete, x11rb::CURRENT_TIME, 0, 0, 0]),
+            );
+            self.conn.send_event(false, window, EventMask::NO_EVENT, event)?;
+        } else {
+            // Some simple X11 clients do not implement WM_DELETE_WINDOW.
+            self.conn.kill_client(window)?;
+        }
+        self.conn.flush()?;
+        Ok(())
+    }
+
     pub(super) fn spawn_from_env(&self, variable: &str, fallback: &str) {
         let program = std::env::var(variable).unwrap_or_else(|_| fallback.to_string());
         self.spawn_command(&program);
