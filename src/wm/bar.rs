@@ -88,9 +88,9 @@ impl SearchBar {
             window, gc, width, active: false, query: String::new(),
             matches: Vec::new(), selected: 0, programs, current_workspace: 0,
             previous_cpu: None, cpu_history: vec![0; 16], status: String::new(),
-            cpu_segment: "CPU ................   0%".to_string(),
+            cpu_segment: "CPU ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁   0%".to_string(),
             slow_segment: String::new(),
-            visualizer: "............".to_string(),
+            visualizer: "▁▁▁▁▁▁▁▁▁▁▁▁".to_string(),
             cava_rx: None, cava_child: None,
             last_cpu_sample: Instant::now(), last_slow_sample: Instant::now() - Duration::from_secs(2),
         };
@@ -277,7 +277,7 @@ impl SearchBar {
     pub(super) fn tick(&mut self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
         if let Some(rx) = &self.cava_rx {
             while let Ok(frame) = rx.try_recv() {
-                const LEVELS: [char; 8] = ['_', '-', '=', '+', '*', '#', '%', '@'];
+                const LEVELS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
                 self.visualizer = frame.iter().map(|v| LEVELS[(*v).min(7) as usize]).collect();
             }
         }
@@ -299,7 +299,7 @@ impl SearchBar {
             let (cpu_label, cpu_usage) = Self::cpu_usage(&mut self.previous_cpu);
             self.cpu_history.push(cpu_usage);
             if self.cpu_history.len() > 16 { self.cpu_history.remove(0); }
-            const LEVELS: [char; 8] = ['_', '-', '=', '+', '*', '#', '%', '@'];
+            const LEVELS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
             let graph: String = self.cpu_history.iter()
                 .map(|value| LEVELS[((*value as usize) * 7 / 100).min(7)])
                 .collect();
@@ -394,7 +394,35 @@ impl SearchBar {
         String::new()
     }
 
-        pub(super) fn redraw(&self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
+        fn draw_status_text(&self, conn: &RustConnection, x: i16, baseline: i16, text: &str) -> Result<(), Box<dyn Error>> {
+        // The core X11 image_text8 request only supports single-byte text. Draw
+        // Unicode block-meter glyphs as filled rectangles so their appearance is
+        // consistent even with the legacy "fixed" X11 font.
+        const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+        let mut cursor = x;
+        for ch in text.chars() {
+            if let Some(level) = BARS.iter().position(|bar| *bar == ch) {
+                let height = (level as i16 + 1) * 2 + 1;
+                conn.poly_fill_rectangle(
+                    self.window,
+                    self.gc,
+                    &[x11rb::protocol::xproto::Rectangle {
+                        x: cursor + 1,
+                        y: baseline - height,
+                        width: 6,
+                        height: height as u16,
+                    }],
+                )?;
+            } else {
+                let byte = if ch.is_ascii() { ch as u8 } else { b'?' };
+                conn.image_text8(self.window, self.gc, cursor, baseline, &[byte])?;
+            }
+            cursor += 8;
+        }
+        Ok(())
+    }
+
+    pub(super) fn redraw(&self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
         conn.change_window_attributes(
             self.window,
             &ChangeWindowAttributesAux::new().background_pixel(BG),
@@ -433,9 +461,9 @@ impl SearchBar {
         conn.change_gc(self.gc, &ChangeGCAux::new().foreground(ACCENT))?;
         conn.image_text8(self.window, self.gc, 250, 18, label.as_bytes())?;
 
-        let status_x = (self.width as i32 - (self.status.len() as i32 * 8) - 10).max(250) as i16;
+        let status_x = (self.width as i32 - (self.status.chars().count() as i32 * 8) - 10).max(250) as i16;
         conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
-        conn.image_text8(self.window, self.gc, status_x, 18, self.status.as_bytes())?;
+        self.draw_status_text(conn, status_x, 18, &self.status)?;
 
         if self.active {
             conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
@@ -447,7 +475,7 @@ impl SearchBar {
                     format!("  {program}")
                 };
                 let item_width = item.len() as i32 * 8;
-                let status_start = (self.width as i32 - (self.status.len() as i32 * 8) - 20).max(250);
+                let status_start = (self.width as i32 - (self.status.chars().count() as i32 * 8) - 20).max(250);
                 if x + item_width > status_start {
                     break;
                 }
