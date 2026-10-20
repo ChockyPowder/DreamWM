@@ -211,7 +211,7 @@ impl SearchBar {
         if let Some(window) = restore_focus {
             conn.set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?;
         }
-        self.draw(conn)?;
+        self.redraw(conn)?;
         conn.flush()?;
         Ok(())
     }
