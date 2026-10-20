@@ -277,7 +277,7 @@ impl SearchBar {
     pub(super) fn tick(&mut self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
         if let Some(rx) = &self.cava_rx {
             while let Ok(frame) = rx.try_recv() {
-                const LEVELS: [char; 8] = ['.', ':', '-', '=', '+', '*', '#', '@'];
+                const LEVELS: [char; 8] = ['_', '-', '=', '+', '*', '#', '%', '@'];
                 self.visualizer = frame.iter().map(|v| LEVELS[(*v).min(7) as usize]).collect();
             }
         }
@@ -299,7 +299,7 @@ impl SearchBar {
             let (cpu_label, cpu_usage) = Self::cpu_usage(&mut self.previous_cpu);
             self.cpu_history.push(cpu_usage);
             if self.cpu_history.len() > 16 { self.cpu_history.remove(0); }
-            const LEVELS: [char; 8] = ['.', ':', '-', '=', '+', '*', '#', '@'];
+            const LEVELS: [char; 8] = ['_', '-', '=', '+', '*', '#', '%', '@'];
             let graph: String = self.cpu_history.iter()
                 .map(|value| LEVELS[((*value as usize) * 7 / 100).min(7)])
                 .collect();
