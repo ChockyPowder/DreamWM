@@ -92,6 +92,7 @@ impl SearchBar {
     }
 
     pub(super) fn is_active(&self) -> bool { self.active }
+    pub(super) fn window_id(&self) -> Window { self.window }
 
     pub(super) fn open(&mut self, conn: &RustConnection, root: Window) -> Result<(), Box<dyn Error>> {
         self.active = true;
