@@ -6,6 +6,7 @@ use std::{
 
 use x11rb::{
     connection::Connection,
+    wrapper::ConnectionExt as WrapperConnectionExt,
     protocol::{
         xproto::{
             AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _,
