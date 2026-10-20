@@ -37,11 +37,11 @@ The initial bindings follow the conventional `dwm` defaults, using **Alt (Mod1)*
 | `Alt + Shift + Space` | Toggle floating for focused client |
 | `Alt + 1–9` | View tag 1–9 |
 | `Alt + Shift + 1–9` | Send focused client to tag 1–9 |
-| `Alt + p` | Launch `dmenu_run` |
+| `Alt + p` | Open dream search in the persistent top bar |
 | `Alt + Shift + Enter` | Launch terminal |
 | `Alt + Shift + q` | Quit dreamWM |
 
-The terminal command defaults to `st`; set `DREAMWM_TERMINAL` to another executable if desired (for example, `DREAMWM_TERMINAL=xterm`). The application menu requires `dmenu_run`. Keyboard keycodes currently assume the conventional US XKB layout. dreamWM publishes `_NET_SUPPORTING_WM_CHECK` and `_NET_WM_NAME` so X11 utilities can identify the window manager.
+The terminal command defaults to `st`; set `DREAMWM_TERMINAL` to another executable if desired (for example, `DREAMWM_TERMINAL=xterm`). The built-in dream search scans executable programs in `PATH`; type to filter, use Up/Down or Tab to select, Enter to launch, and Esc to close search. The top bar stays visible when search is closed. Keyboard keycodes currently assume the conventional US XKB layout. dreamWM publishes `_NET_SUPPORTING_WM_CHECK` and `_NET_WM_NAME` so X11 utilities can identify the window manager.
 
 ## Status
 
@@ -52,6 +52,7 @@ Early prototype. The current code has basic X11 window management, layouts, tag 
 - `src/main.rs` — binary entry point and startup error reporting.
 - `src/config.rs` — layout type, default keycodes, and small configuration constants.
 - `src/wm/mod.rs` — X11 connection, window-manager lifecycle, client state, and visibility/focus handling.
+- `src/wm/bar.rs` — persistent top bar, executable discovery, and the Alt+P dream search interface.
 - `src/wm/keys.rs` — key grabs, keyboard actions, and launching terminal/menu processes.
 - `src/wm/layout.rs` — tile, monocle, and floating layout placement.
 - `src/wm/identity.rs` — EWMH properties used to identify dreamWM to X11 tools.
