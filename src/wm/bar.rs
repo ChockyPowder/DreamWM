@@ -307,11 +307,10 @@ impl SearchBar {
             self.slow_segment = format!("{battery_segment}MEM {memory}  VOL {volume}  {}  {clock}", self.visualizer);
         } else if !self.slow_segment.is_empty() {
             // Update only the visualizer between one-second status refreshes.
-            let parts: Vec<&str> = self.slow_segment.split("  ").collect();
-            if parts.len() >= 4 {
-                let mut segments = parts;
-                let last = segments.len() - 2;
-                segments[last] = &self.visualizer;
+            let mut segments: Vec<String> = self.slow_segment.split("  ").map(str::to_string).collect();
+            if segments.len() >= 4 {
+                let visualizer_index = segments.len() - 2;
+                segments[visualizer_index] = self.visualizer.clone();
                 self.slow_segment = segments.join("  ");
             }
         }
