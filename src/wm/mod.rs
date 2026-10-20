@@ -128,6 +128,13 @@ impl DreamWm {
                         self.keypress(event.detail, event.state)?;
                     }
                 }
+                Event::ButtonPress(event) => {
+                    if !self.bar.is_active() {
+                        if let Some(workspace) = self.bar.handle_button(event.event_x) {
+                            self.view_tag(workspace)?;
+                        }
+                    }
+                }
                 Event::Expose(_) => self.bar.redraw(&self.conn)?,
                 _ => {}
             }
