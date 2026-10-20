@@ -285,7 +285,6 @@ impl SearchBar {
     }
 
     fn sample_status(&mut self, update_cpu: bool, update_slow: bool) {
-        let mut segments = Vec::new();
         if update_cpu {
             let (cpu_label, cpu_usage) = Self::cpu_usage(&mut self.previous_cpu);
             self.cpu_history.push(cpu_usage);
@@ -294,48 +293,29 @@ impl SearchBar {
             let graph: String = self.cpu_history.iter()
                 .map(|value| LEVELS[((*value as usize) * 7 / 100).min(7)])
                 .collect();
-            segments.push(format!("CPU {graph} {cpu_label}"));
-        } else {
-            // Keep the last sampled CPU graph and percentage visible between samples.
-            let graph: String = self.cpu_history.iter().map(|value| {
-                const LEVELS: [char; 8] = ['.', ':', '-', '=', '+', '*', '#', '@'];
-                LEVELS[((*value as usize) * 7 / 100).min(7)]
-            }).collect();
-            let usage = self.cpu_history.last().copied().unwrap_or(0);
-            segments.push(format!("CPU {graph} {usage:>3}%"));
+            self.cpu_segment = format!("CPU {graph} {cpu_label}");
         }
-
-        let battery = Self::battery_status();
-        let memory = Self::memory_status();
-        let volume = Self::volume_status();
-        let clock = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
-            .map(|duration| duration.as_secs() as i64)
-            .ok().and_then(|secs| {
-                // Local time and date formatting are delegated to the system's date utility.
-                Command::new("date").arg("+%a %d %b %H:%M").output().ok()
-                    .filter(|out| out.status.success())
-                    .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-                    .or_else(|| Some(format!("T+{secs}")))
-            }).unwrap_or_else(|| "--:--".to_string());
         if update_slow {
-            self.status = format!("{}  {}  MEM {}  VOL {}  {}  {}",
-                segments.first().cloned().unwrap_or_default(),
-                battery,
-                memory,
-                volume,
-                self.visualizer,
-                clock,
-            );
-        } else {
-            // Refresh fast-changing CPU figures while retaining all other status fields.
-            let rest = self.status.split_once("  MEM ").map(|(_, rest)| format!("  MEM {rest}"));
-            if let Some(rest) = rest {
-                self.status = format!("{}  {}{}", segments.first().cloned().unwrap_or_default(), battery, rest);
-            } else {
-                self.status = format!("{}  {}  MEM {}  VOL {}  {}  {}",
-                    segments.first().cloned().unwrap_or_default(), battery, memory, volume, self.visualizer, clock);
+            let battery = Self::battery_status();
+            let memory = Self::memory_status();
+            let volume = Self::volume_status();
+            let clock = Command::new("date").arg("+%a %d %b %H:%M").output()
+                .ok().filter(|out| out.status.success())
+                .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+                .unwrap_or_else(|| "--:--".to_string());
+            let battery_segment = if battery.is_empty() { String::new() } else { format!("{battery}  ") };
+            self.slow_segment = format!("{battery_segment}MEM {memory}  VOL {volume}  {}  {clock}", self.visualizer);
+        } else if !self.slow_segment.is_empty() {
+            // Update only the visualizer between one-second status refreshes.
+            let parts: Vec<&str> = self.slow_segment.split("  ").collect();
+            if parts.len() >= 4 {
+                let mut segments = parts;
+                let last = segments.len() - 2;
+                segments[last] = &self.visualizer;
+                self.slow_segment = segments.join("  ");
             }
         }
+        self.status = format!("{}  {}", self.cpu_segment, self.slow_segment);
     }
 
     fn memory_status() -> String {
