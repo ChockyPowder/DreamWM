@@ -266,7 +266,7 @@ impl DreamWm {
             (KEY_J, false) => self.focus_step(1)?,
             (KEY_K, false) => self.focus_step(-1)?,
             (KEY_RETURN, false) => self.zoom()?,
-            (KEY_RETURN, true) => self.spawn_from_env("DREAMWM_TERMINAL", "xterm"),
+            (KEY_RETURN, true) => self.spawn_from_env("DREAMWM_TERMINAL", "st"),
             (KEY_H, false) => {
                 self.master_factor = (self.master_factor - MASTER_STEP).clamp(0.1, 0.9);
                 self.arrange()?;
