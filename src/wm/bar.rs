@@ -10,7 +10,7 @@ use x11rb::{
     rust_connection::RustConnection,
 };
 
-pub(super) const BAR_HEIGHT: u16 = 48;
+pub(super) const BAR_HEIGHT: u16 = 28;
 const BG: u32 = 0x20242b;
 const FG: u32 = 0xd8dee9;
 const ACCENT: u32 = 0x88c0d0;
@@ -184,22 +184,37 @@ impl SearchBar {
     }
 
     pub(super) fn redraw(&self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
-        conn.change_window_attributes(self.window, &ChangeWindowAttributesAux::new().background_pixel(BG))?;
+        conn.change_window_attributes(
+            self.window,
+            &ChangeWindowAttributesAux::new().background_pixel(BG),
+        )?;
         conn.clear_area(false, self.window, 0, 0, self.width, BAR_HEIGHT)?;
-        let label = " dreamWM   |   Alt+P: dream search".to_string();
-        conn.change_gc(self.gc, &ChangeGCAux::new().foreground(ACCENT))?;
+
+        // Draw everything on one baseline. Start results after the prompt so
+        // neither the prompt nor the typed query can be overwritten.
+        let (label, color) = if self.active {
+            (format!(" dream search: {}_", self.query), ACCENT)
+        } else {
+            (" dreamWM   |   Alt+P: dream search".to_string(), ACCENT)
+        };
+        conn.change_gc(self.gc, &ChangeGCAux::new().foreground(color))?;
         conn.image_text8(self.window, self.gc, 10, 18, label.as_bytes())?;
+
         if self.active {
-            let prompt = format!(" dream search: {}_", self.query);
-            conn.image_text8(self.window, self.gc, 10, 18, prompt.as_bytes())?;
             conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
-            let mut x = 10i16;
+            let mut x = 10i32 + (label.len() as i32 * 8) + 12;
             for (index, program) in self.matches.iter().enumerate() {
-                let marker = if index == self.selected { "> " } else { "  " };
-                let item = format!("{marker}{program}");
-                if x as u16 + (item.len() as u16 * 8) > self.width.saturating_sub(10) { break; }
-                conn.image_text8(self.window, self.gc, x, 40, item.as_bytes())?;
-                x += (item.len() as i16 * 8).max(16);
+                let item = if index == self.selected {
+                    format!("> {program}")
+                } else {
+                    format!("  {program}")
+                };
+                let item_width = item.len() as i32 * 8;
+                if x + item_width > self.width as i32 - 8 {
+                    break;
+                }
+                conn.image_text8(self.window, self.gc, x as i16, 18, item.as_bytes())?;
+                x += item_width + 8;
             }
         }
         Ok(())
