@@ -1,16 +1,16 @@
 //! Persistent top bar and keyboard-driven application search.
 
-use std::{collections::BTreeSet, env, error::Error, fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
+use std::{collections::BTreeSet, env, error::Error, fs, os::unix::fs::PermissionsExt, process::Command};
 use x11rb::{
     connection::Connection,
     protocol::xproto::{
-        AtomEnum, ChangeWindowAttributesAux, ConnectionExt as _, CreateGCAux, CreateWindowAux,
+        ChangeGCAux, ChangeWindowAttributesAux, ConnectionExt as _, CreateGCAux, CreateWindowAux,
         EventMask, GrabMode, InputFocus, StackMode, Window, WindowClass,
     },
     rust_connection::RustConnection,
 };
 
-pub(super) const BAR_HEIGHT: u16 = 28;
+pub(super) const BAR_HEIGHT: u16 = 48;
 const BG: u32 = 0x20242b;
 const FG: u32 = 0xd8dee9;
 const ACCENT: u32 = 0x88c0d0;
@@ -101,12 +101,12 @@ impl SearchBar {
         conn.grab_keyboard(false, root, x11rb::CURRENT_TIME, GrabMode::ASYNC, GrabMode::ASYNC)?.reply()?;
         conn.map_window(self.window)?;
         conn.configure_window(self.window, &x11rb::protocol::xproto::ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
-        self.draw(conn)?;
+        self.redraw(conn)?;
         conn.flush()?;
         Ok(())
     }
 
-    pub(super) fn handle_key(&mut self, conn: &RustConnection, keycode: u8, state: u16, root: Window, restore_focus: Option<Window>) -> Result<BarAction, Box<dyn Error>> {
+    pub(super) fn handle_key(&mut self, conn: &RustConnection, keycode: u8, state: u16, restore_focus: Option<Window>) -> Result<BarAction, Box<dyn Error>> {
         if !self.active { return Ok(BarAction::Ignored); }
         match keycode {
             9 => {
@@ -147,7 +147,6 @@ impl SearchBar {
         self.refresh_matches();
         self.draw(conn)?;
         conn.flush()?;
-        let _ = root;
         Ok(BarAction::Updated)
     }
 
@@ -188,24 +187,22 @@ impl SearchBar {
         if self.selected >= self.matches.len() { self.selected = 0; }
     }
 
-    fn draw(&self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
+    pub(super) fn redraw(&self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
         conn.change_window_attributes(self.window, &ChangeWindowAttributesAux::new().background_pixel(BG))?;
         conn.clear_area(false, self.window, 0, 0, self.width, BAR_HEIGHT)?;
-        let label = if self.active {
-            format!(" dream search: {}_", self.query)
-        } else {
-            " dreamWM   |   Alt+P: dream search".to_string()
-        };
-        conn.change_gc(self.gc, &CreateGCAux::new().foreground(ACCENT))?;
+        let label = " dreamWM   |   Alt+P: dream search".to_string();
+        conn.change_gc(self.gc, &ChangeGCAux::new().foreground(ACCENT))?;
         conn.image_text8(self.window, self.gc, 10, 18, label.as_bytes())?;
         if self.active {
-            conn.change_gc(self.gc, &CreateGCAux::new().foreground(FG))?;
+            let prompt = format!(" dream search: {}_", self.query);
+            conn.image_text8(self.window, self.gc, 10, 18, prompt.as_bytes())?;
+            conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
             let mut x = 10i16;
             for (index, program) in self.matches.iter().enumerate() {
-                let marker = if index == self.selected { "  > " } else { "    " };
+                let marker = if index == self.selected { "> " } else { "  " };
                 let item = format!("{marker}{program}");
                 if x as u16 + (item.len() as u16 * 8) > self.width.saturating_sub(10) { break; }
-                conn.image_text8(self.window, self.gc, x, 18, item.as_bytes())?;
+                conn.image_text8(self.window, self.gc, x, 40, item.as_bytes())?;
                 x += (item.len() as i16 * 8).max(16);
             }
         }
