@@ -5,7 +5,7 @@ mod identity;
 mod keys;
 mod layout;
 
-use std::{collections::{HashMap, HashSet}, error::Error};
+use std::{collections::{HashMap, HashSet}, error::Error, time::{Duration, Instant}};
 use x11rb::{
     connection::Connection,
     protocol::{xproto::{ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _, EventMask, InputFocus, StackMode, Window}, Event},
@@ -89,55 +89,62 @@ impl DreamWm {
     }
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         eprintln!("dreamWM: running on X11 (early development build)");
+        let mut last_status = Instant::now();
         while self.running {
-            match self.conn.wait_for_event()? {
-                Event::MapRequest(event) => self.manage(event.window)?,
-                Event::ConfigureRequest(event) => {
-                    if self.layout == Layout::Floating
-                        || self.floating_clients.contains(&event.window)
-                        || !self.clients.contains(&event.window)
-                    {
-                        let aux = ConfigureWindowAux::new()
-                            .x(event.x as i32)
-                            .y(event.y as i32)
-                            .width(event.width as u32)
-                            .height(event.height as u32)
-                            .border_width(event.border_width as u32)
-                            .sibling(event.sibling)
-                            .stack_mode(event.stack_mode);
-                        self.conn.configure_window(event.window, &aux)?;
-                    } else {
-                        self.arrange()?;
-                    }
-                    self.conn.flush()?;
-                }
-                Event::DestroyNotify(event) => self.unmanage(event.window)?,
-                Event::UnmapNotify(event) => {
-                    // Unmaps initiated by tag switching are not client exits.
-                    if !self.hidden_clients.contains(&event.window) {
-                        self.unmanage(event.window)?;
-                    }
-                }
-                Event::KeyPress(event) => {
-                    if self.bar.is_active() {
-                        match self.bar.handle_key(&self.conn, event.detail, event.state.bits(), self.focused)? {
-                            BarAction::Launched(program) => SearchBar::launch(&program),
-                            BarAction::SwitchWorkspace(workspace) => self.view_tag(workspace)?,
-                            BarAction::Ignored | BarAction::Updated | BarAction::Closed => {}
+            if last_status.elapsed() >= Duration::from_secs(1) {
+                self.bar.tick(&self.conn)?;
+                last_status = Instant::now();
+            }
+            match self.conn.poll_for_event()? {
+                Some(event) => match event {
+                    Event::MapRequest(event) => self.manage(event.window)?,
+                    Event::ConfigureRequest(event) => {
+                        if self.layout == Layout::Floating
+                            || self.floating_clients.contains(&event.window)
+                            || !self.clients.contains(&event.window)
+                        {
+                            let aux = ConfigureWindowAux::new()
+                                .x(event.x as i32)
+                                .y(event.y as i32)
+                                .width(event.width as u32)
+                                .height(event.height as u32)
+                                .border_width(event.border_width as u32)
+                                .sibling(event.sibling)
+                                .stack_mode(event.stack_mode);
+                            self.conn.configure_window(event.window, &aux)?;
+                        } else {
+                            self.arrange()?;
                         }
-                    } else {
-                        self.keypress(event.detail, event.state)?;
+                        self.conn.flush()?;
                     }
-                }
-                Event::ButtonPress(event) => {
-                    if !self.bar.is_active() {
-                        if let Some(workspace) = self.bar.handle_button(event.event_x) {
-                            self.view_tag(workspace)?;
+                    Event::DestroyNotify(event) => self.unmanage(event.window)?,
+                    Event::UnmapNotify(event) => {
+                        if !self.hidden_clients.contains(&event.window) {
+                            self.unmanage(event.window)?;
                         }
                     }
-                }
-                Event::Expose(_) => self.bar.redraw(&self.conn)?,
-                _ => {}
+                    Event::KeyPress(event) => {
+                        if self.bar.is_active() {
+                            match self.bar.handle_key(&self.conn, event.detail, event.state.bits(), self.focused)? {
+                                BarAction::Launched(program) => SearchBar::launch(&program),
+                                BarAction::SwitchWorkspace(workspace) => self.view_tag(workspace)?,
+                                BarAction::Ignored | BarAction::Updated | BarAction::Closed => {}
+                            }
+                        } else {
+                            self.keypress(event.detail, event.state)?;
+                        }
+                    }
+                    Event::ButtonPress(event) => {
+                        if !self.bar.is_active() {
+                            if let Some(workspace) = self.bar.handle_button(event.event_x) {
+                                self.view_tag(workspace)?;
+                            }
+                        }
+                    }
+                    Event::Expose(_) => self.bar.redraw(&self.conn)?,
+                    _ => {}
+                },
+                None => std::thread::sleep(Duration::from_millis(25)),
             }
         }
         Ok(())
