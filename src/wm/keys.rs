@@ -156,6 +156,7 @@ impl DreamWm {
     }
     pub(super) fn view_tag(&mut self, tag: u8) -> Result<(), Box<dyn Error>> {
         self.current_tag = tag;
+        self.bar.set_workspace(&self.conn, tag)?;
         self.sync_visibility()
     }
     pub(super) fn tag_focused(&mut self, tag: u8) -> Result<(), Box<dyn Error>> {
