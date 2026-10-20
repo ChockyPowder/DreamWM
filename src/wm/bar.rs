@@ -1,6 +1,15 @@
 //! Persistent top bar and keyboard-driven application search.
 
-use std::{collections::BTreeSet, env, error::Error, fs, os::unix::fs::PermissionsExt, process::Command};
+use std::{
+    collections::BTreeSet,
+    env, error::Error, fs,
+    io::{BufReader, Read},
+    os::unix::fs::PermissionsExt,
+    process::{Child, Command, Stdio},
+    sync::mpsc::{self, Receiver},
+    thread,
+    time::{Duration, Instant, SystemTime},
+};
 use x11rb::{
     connection::Connection,
     protocol::xproto::{
@@ -72,6 +81,9 @@ impl SearchBar {
             window, gc, width, active: false, query: String::new(),
             matches: Vec::new(), selected: 0, programs, current_workspace: 0,
             previous_cpu: None, cpu_history: vec![0; 16], status: String::new(),
+            visualizer: "............".to_string(),
+            cava_rx: None, cava_child: None,
+            last_cpu_sample: Instant::now(), last_slow_sample: Instant::now() - Duration::from_secs(2),
         };
         bar.refresh_matches();
         bar.sample_status();
@@ -207,28 +219,127 @@ impl SearchBar {
         if self.selected >= self.matches.len() { self.selected = 0; }
     }
 
+    fn start_visualizer(&mut self) {
+        let Some(home) = env::var_os("HOME") else { return };
+        let config = std::path::PathBuf::from(home).join(".config/cava/config_dwm");
+        if !config.is_file() { return; }
+        let child = Command::new("cava")
+            .arg("-p").arg(config)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn();
+        let Ok(mut child) = child else { return };
+        let Some(stdout) = child.stdout.take() else { let _ = child.kill(); return };
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut token = Vec::new();
+            let mut frame = Vec::with_capacity(12);
+            let mut byte = [0u8; 1];
+            loop {
+                match reader.read_exact(&mut byte) {
+                    Ok(()) => {
+                        if byte[0] == b';' || byte[0] == b'\\n' || byte[0] == b'\\r' {
+                            if !token.is_empty() {
+                                let value = std::str::from_utf8(&token).ok()
+                                    .and_then(|s| s.trim().parse::<u8>().ok())
+                                    .unwrap_or_else(|| token.first().copied().unwrap_or(b'0').saturating_sub(b'0'))
+                                    .min(7);
+                                frame.push(value);
+                                token.clear();
+                            }
+                            if frame.len() >= 12 {
+                                let _ = tx.send(frame.drain(..).take(12).collect());
+                            }
+                        } else {
+                            token.push(byte[0]);
+                            if token.len() > 16 { token.clear(); }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        self.cava_rx = Some(rx);
+        self.cava_child = Some(child);
+    }
+
     pub(super) fn tick(&mut self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
-        self.sample_status();
-        self.redraw(conn)?;
-        conn.flush()?;
+        if let Some(rx) = &self.cava_rx {
+            while let Ok(frame) = rx.try_recv() {
+                const LEVELS: [char; 8] = ['.', ':', '-', '=', '+', '*', '#', '@'];
+                self.visualizer = frame.iter().map(|v| LEVELS[(*v).min(7) as usize]).collect();
+            }
+        }
+        let now = Instant::now();
+        let cpu_due = now.duration_since(self.last_cpu_sample) >= Duration::from_millis(250);
+        let slow_due = now.duration_since(self.last_slow_sample) >= Duration::from_secs(1);
+        if cpu_due { self.last_cpu_sample = now; }
+        if slow_due { self.last_slow_sample = now; }
+        if cpu_due || slow_due {
+            self.sample_status(cpu_due, slow_due);
+            self.redraw(conn)?;
+            conn.flush()?;
+        }
         Ok(())
     }
 
-    fn sample_status(&mut self) {
-        let clock = Command::new("date").arg("+%H:%M:%S").output()
-            .ok().filter(|out| out.status.success())
-            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-            .unwrap_or_else(|| "--:--:--".to_string());
+    fn sample_status(&mut self, update_cpu: bool, update_slow: bool) {
+        let mut segments = Vec::new();
+        if update_cpu {
+            let (cpu_label, cpu_usage) = Self::cpu_usage(&mut self.previous_cpu);
+            self.cpu_history.push(cpu_usage);
+            if self.cpu_history.len() > 16 { self.cpu_history.remove(0); }
+            const LEVELS: [char; 8] = ['.', ':', '-', '=', '+', '*', '#', '@'];
+            let graph: String = self.cpu_history.iter()
+                .map(|value| LEVELS[((*value as usize) * 7 / 100).min(7)])
+                .collect();
+            segments.push(format!("CPU {graph} {cpu_label}"));
+        } else {
+            // Keep the last sampled CPU graph and percentage visible between samples.
+            let graph: String = self.cpu_history.iter().map(|value| {
+                const LEVELS: [char; 8] = ['.', ':', '-', '=', '+', '*', '#', '@'];
+                LEVELS[((*value as usize) * 7 / 100).min(7)]
+            }).collect();
+            let usage = self.cpu_history.last().copied().unwrap_or(0);
+            segments.push(format!("CPU {graph} {usage:>3}%"));
+        }
 
-        let (cpu_label, cpu_usage) = Self::cpu_usage(&mut self.previous_cpu);
-        self.cpu_history.push(cpu_usage);
-        if self.cpu_history.len() > 16 { self.cpu_history.remove(0); }
-        let graph: String = self.cpu_history.iter().map(|&value| {
-            const BARS: [char; 9] = ['.', '-', '=', '+', '*', '#', '#', '#', '#'];
-            BARS[((value as usize) / 13).min(8)]
-        }).collect();
+        let battery = Self::battery_status();
+        let memory = Self::memory_status();
+        let volume = Self::volume_status();
+        let clock = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+            .map(|duration| duration.as_secs() as i64)
+            .ok().and_then(|secs| {
+                // Local time and date formatting are delegated to the system's date utility.
+                Command::new("date").arg("+%a %d %b %H:%M").output().ok()
+                    .filter(|out| out.status.success())
+                    .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+                    .or_else(|| Some(format!("T+{secs}")))
+            }).unwrap_or_else(|| "--:--".to_string());
+        if update_slow {
+            self.status = format!("{}  {}  MEM {}  VOL {}  {}  {}",
+                segments.first().cloned().unwrap_or_default(),
+                battery,
+                memory,
+                volume,
+                self.visualizer,
+                clock,
+            );
+        } else {
+            // Refresh fast-changing CPU figures while retaining all other status fields.
+            let rest = self.status.split_once("  MEM ").map(|(_, rest)| format!("  MEM {rest}"));
+            if let Some(rest) = rest {
+                self.status = format!("{}  {}{}", segments.first().cloned().unwrap_or_default(), battery, rest);
+            } else {
+                self.status = format!("{}  {}  MEM {}  VOL {}  {}  {}",
+                    segments.first().cloned().unwrap_or_default(), battery, memory, volume, self.visualizer, clock);
+            }
+        }
+    }
 
-        let memory = fs::read_to_string("/proc/meminfo").ok().and_then(|contents| {
+    fn memory_status() -> String {
+        fs::read_to_string("/proc/meminfo").ok().and_then(|contents| {
             let mut total = 0u64;
             let mut available = 0u64;
             for line in contents.lines() {
@@ -238,11 +349,20 @@ impl SearchBar {
                     available = value.split_whitespace().next()?.parse().ok()?;
                 }
             }
-            (total > 0).then_some(((total - available) * 100 / total) as u8)
-        }).map(|value| format!("MEM {value}%")).unwrap_or_else(|| "MEM --".to_string());
+            (total > 0).then_some(((total.saturating_sub(available)) * 100 / total) as u8)
+        }).map(|value| format!("{value:>3}%")).unwrap_or_else(|| "--".to_string())
+    }
 
-        let battery = Self::battery_status();
-        self.status = format!("{clock}  {cpu_label} [{graph}]  {battery}  {memory}");
+    fn volume_status() -> String {
+        let output = Command::new("wpctl").args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+            .output();
+        let Ok(output) = output else { return "--".to_string() };
+        let text = String::from_utf8_lossy(&output.stdout);
+        if text.contains("MUTED") { return "mute".to_string(); }
+        let Some(value) = text.split_whitespace().find_map(|part| part.parse::<f32>().ok()) else {
+            return "--".to_string();
+        };
+        format!("{:>3}%", (value * 100.0).round() as u32)
     }
 
     fn cpu_usage(previous: &mut Option<(u64, u64)>) -> (String, u8) {
@@ -256,8 +376,8 @@ impl SearchBar {
             let total: u64 = values.iter().sum();
             Some((total, idle))
         });
-        let Some((total, idle)) = parsed else { return ("CPU --".to_string(), 0) };
-        let usage = previous.map(|(old_total, old_idle)| {
+        let Some((total, idle)) = parsed else { return (" --%".to_string(), 0) };
+        let usage = (*previous).map(|(old_total, old_idle)| {
             let total_delta = total.saturating_sub(old_total);
             let idle_delta = idle.saturating_sub(old_idle);
             if total_delta == 0 { 0 } else {
@@ -265,29 +385,28 @@ impl SearchBar {
             }
         }).unwrap_or(0);
         *previous = Some((total, idle));
-        (format!("CPU {usage}%"), usage)
+        (format!("{usage:>3}%"), usage)
     }
 
     fn battery_status() -> String {
-        let Ok(entries) = fs::read_dir("/sys/class/power_supply") else {
-            return "BAT N/A".to_string();
-        };
+        let Ok(entries) = fs::read_dir("/sys/class/power_supply") else { return String::new() };
         for entry in entries.flatten() {
             let path = entry.path();
-            let kind = fs::read_to_string(path.join("type")).unwrap_or_default();
-            if kind.trim() != "Battery" { continue; }
+            if fs::read_to_string(path.join("type")).unwrap_or_default().trim() != "Battery" { continue; }
             let capacity = fs::read_to_string(path.join("capacity")).ok()
                 .and_then(|value| value.trim().parse::<u8>().ok());
             let status = fs::read_to_string(path.join("status")).unwrap_or_default();
             if let Some(capacity) = capacity {
-                let marker = if status.trim() == "Charging" { "+" } else { "" };
+                let marker = match status.trim() {
+                    "Charging" => "+", "Discharging" => "-", "Full" | "Not charging" => "=", _ => "",
+                };
                 return format!("BAT {capacity}%{marker}");
             }
         }
-        "BAT N/A".to_string()
+        String::new()
     }
 
-    pub(super) fn redraw(&self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
+        pub(super) fn redraw(&self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
         conn.change_window_attributes(
             self.window,
             &ChangeWindowAttributesAux::new().background_pixel(BG),
@@ -326,7 +445,7 @@ impl SearchBar {
         conn.change_gc(self.gc, &ChangeGCAux::new().foreground(ACCENT))?;
         conn.image_text8(self.window, self.gc, 250, 18, label.as_bytes())?;
 
-        let status_x = (self.width as i32 - (self.status.len() as i32 * 8) - 10).max(0) as i16;
+        let status_x = (self.width as i32 - (self.status.len() as i32 * 8) - 10).max(250) as i16;
         conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
         conn.image_text8(self.window, self.gc, status_x, 18, self.status.as_bytes())?;
 
@@ -340,7 +459,7 @@ impl SearchBar {
                     format!("  {program}")
                 };
                 let item_width = item.len() as i32 * 8;
-                let status_start = self.width as i32 - (self.status.len() as i32 * 8) - 20;
+                let status_start = (self.width as i32 - (self.status.len() as i32 * 8) - 20).max(250);
                 if x + item_width > status_start {
                     break;
                 }
