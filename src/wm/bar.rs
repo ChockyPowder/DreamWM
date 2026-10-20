@@ -68,7 +68,7 @@ impl SearchBar {
             matches: Vec::new(), selected: 0, programs,
         };
         bar.refresh_matches();
-        bar.draw(conn)?;
+        bar.redraw(conn)?;
         Ok(bar)
     }
 
@@ -145,25 +145,20 @@ impl SearchBar {
             _ => {}
         }
         self.refresh_matches();
-        self.draw(conn)?;
+        self.redraw(conn)?;
         conn.flush()?;
         Ok(BarAction::Updated)
     }
 
     fn keycode_to_char(key: u8, shift: bool) -> Option<char> {
         let plain = match key {
-            10..=18 => char::from(b'1' + key - 10),
-            19 => '0',
+            10..=18 => char::from(b'1' + key - 10), 19 => '0',
             24..=33 => ['q','w','e','r','t','y','u','i','o','p'][(key - 24) as usize],
-            34..=43 => ['[',']','a','s','d','f','g','h','j','k'][(key - 34) as usize],
-            44..=53 => ['l',';','\'','`','z','x','c','v','b','n'][(key - 44) as usize],
-            54..=58 => ['m',',','.','/','*'][(key - 54) as usize],
-            65 => ' ',
-            20 => '-',
-            21 => '=',
-            59 => ',',
-            60 => '.',
-            61 => '/',
+            34 => '[', 35 => ']',
+            38..=46 => ['a','s','d','f','g','h','j','k','l'][(key - 38) as usize],
+            47 => ';', 48 => '\'', 49 => '`',
+            52..=58 => ['z','x','c','v','b','n','m'][(key - 52) as usize],
+            59 => ',', 60 => '.', 61 => '/', 65 => ' ', 20 => '-', 21 => '=',
             _ => return None,
         };
         if !shift { return Some(plain); }
