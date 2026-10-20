@@ -6,7 +6,7 @@ description = "A small, dwm-inspired X11 window manager written in Rust"
 license = "MIT"
 
 [dependencies]
-x11rb = "0.13"
+x11rb = { version = "0.13", features = ["composite", "damage", "present", "randr", "render", "xfixes"] }
 
 [profile.release]
 strip = true
