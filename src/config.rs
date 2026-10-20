@@ -1,7 +1,6 @@
 //! User-tunable constants and keyboard layout assumptions.
 
 pub(crate) const BORDER_PX: u16 = 2;
-pub(crate) const MIN_SIZE: u16 = 1;
 pub(crate) const MASTER_STEP: f32 = 0.05;
 pub(crate) const TAG_COUNT: u8 = 9;
 
