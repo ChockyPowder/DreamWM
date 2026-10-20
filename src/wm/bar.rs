@@ -33,6 +33,9 @@ pub(super) struct SearchBar {
     selected: usize,
     programs: Vec<String>,
     current_workspace: u8,
+    previous_cpu: Option<(u64, u64)>,
+    cpu_history: Vec<u8>,
+    status: String,
 }
 
 impl SearchBar {
@@ -68,8 +71,10 @@ impl SearchBar {
         let mut bar = Self {
             window, gc, width, active: false, query: String::new(),
             matches: Vec::new(), selected: 0, programs, current_workspace: 0,
+            previous_cpu: None, cpu_history: vec![0; 16], status: String::new(),
         };
         bar.refresh_matches();
+        bar.sample_status();
         bar.redraw(conn)?;
         Ok(bar)
     }
@@ -202,6 +207,86 @@ impl SearchBar {
         if self.selected >= self.matches.len() { self.selected = 0; }
     }
 
+    pub(super) fn tick(&mut self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
+        self.sample_status();
+        self.redraw(conn)?;
+        conn.flush()?;
+        Ok(())
+    }
+
+    fn sample_status(&mut self) {
+        let clock = Command::new("date").arg("+%H:%M:%S").output()
+            .ok().filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+            .unwrap_or_else(|| "--:--:--".to_string());
+
+        let (cpu_label, cpu_usage) = Self::cpu_usage(&mut self.previous_cpu);
+        self.cpu_history.push(cpu_usage);
+        if self.cpu_history.len() > 16 { self.cpu_history.remove(0); }
+        let graph: String = self.cpu_history.iter().map(|&value| {
+            const BARS: [&str; 9] = [".", "-", "=", "=", "+", "*", "#", "#", "#"];
+            BARS[((value as usize) / 13).min(8)]
+        }).collect();
+
+        let memory = fs::read_to_string("/proc/meminfo").ok().and_then(|contents| {
+            let mut total = 0u64;
+            let mut available = 0u64;
+            for line in contents.lines() {
+                if let Some(value) = line.strip_prefix("MemTotal:") {
+                    total = value.split_whitespace().next()?.parse().ok()?;
+                } else if let Some(value) = line.strip_prefix("MemAvailable:") {
+                    available = value.split_whitespace().next()?.parse().ok()?;
+                }
+            }
+            (total > 0).then_some(((total - available) * 100 / total) as u8)
+        }).map(|value| format!("MEM {value}%")).unwrap_or_else(|| "MEM --".to_string());
+
+        let battery = Self::battery_status();
+        self.status = format!("{clock}  {cpu_label} [{graph}]  {battery}  {memory}");
+    }
+
+    fn cpu_usage(previous: &mut Option<(u64, u64)>) -> (String, u8) {
+        let parsed = fs::read_to_string("/proc/stat").ok().and_then(|contents| {
+            let line = contents.lines().next()?;
+            let mut values = line.split_whitespace();
+            if values.next()? != "cpu" { return None; }
+            let values: Vec<u64> = values.map(str::parse).collect::<Result<_, _>>().ok()?;
+            if values.len() < 4 { return None; }
+            let idle = values[3] + values.get(4).copied().unwrap_or(0);
+            let total: u64 = values.iter().sum();
+            Some((total, idle))
+        });
+        let Some((total, idle)) = parsed else { return ("CPU --".to_string(), 0) };
+        let usage = previous.map(|(old_total, old_idle)| {
+            let total_delta = total.saturating_sub(old_total);
+            let idle_delta = idle.saturating_sub(old_idle);
+            if total_delta == 0 { 0 } else {
+                (((total_delta.saturating_sub(idle_delta)) * 100) / total_delta).min(100) as u8
+            }
+        }).unwrap_or(0);
+        *previous = Some((total, idle));
+        (format!("CPU {usage}%"), usage)
+    }
+
+    fn battery_status() -> String {
+        let Ok(entries) = fs::read_dir("/sys/class/power_supply") else {
+            return "BAT N/A".to_string();
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let kind = fs::read_to_string(path.join("type")).unwrap_or_default();
+            if kind.trim() != "Battery" { continue; }
+            let capacity = fs::read_to_string(path.join("capacity")).ok()
+                .and_then(|value| value.trim().parse::<u8>().ok());
+            let status = fs::read_to_string(path.join("status")).unwrap_or_default();
+            if let Some(capacity) = capacity {
+                let marker = if status.trim() == "Charging" { "+" } else { "" };
+                return format!("BAT {capacity}%{marker}");
+            }
+        }
+        "BAT N/A".to_string()
+    }
+
     pub(super) fn redraw(&self, conn: &RustConnection) -> Result<(), Box<dyn Error>> {
         conn.change_window_attributes(
             self.window,
@@ -227,10 +312,8 @@ impl SearchBar {
                     height: 20,
                 }],
             )?;
-            conn.change_gc(
-                self.gc,
-                &ChangeGCAux::new().foreground(if selected { BG } else { FG }),
-            )?;
+            // Keep every workspace number bright and readable, including the selected one.
+            conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
             let number = (workspace + 1).to_string();
             conn.image_text8(self.window, self.gc, x + 7, 18, number.as_bytes())?;
         }
@@ -243,6 +326,10 @@ impl SearchBar {
         conn.change_gc(self.gc, &ChangeGCAux::new().foreground(ACCENT))?;
         conn.image_text8(self.window, self.gc, 250, 18, label.as_bytes())?;
 
+        let status_x = (self.width as i32 - (self.status.len() as i32 * 8) - 10).max(0) as i16;
+        conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
+        conn.image_text8(self.window, self.gc, status_x, 18, self.status.as_bytes())?;
+
         if self.active {
             conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
             let mut x = 250i32 + (label.len() as i32 * 8) + 12;
@@ -253,7 +340,8 @@ impl SearchBar {
                     format!("  {program}")
                 };
                 let item_width = item.len() as i32 * 8;
-                if x + item_width > self.width as i32 - 8 {
+                let status_start = self.width as i32 - (self.status.len() as i32 * 8) - 20;
+                if x + item_width > status_start {
                     break;
                 }
                 conn.image_text8(self.window, self.gc, x as i16, 18, item.as_bytes())?;
