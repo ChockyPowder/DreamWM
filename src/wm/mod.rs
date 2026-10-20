@@ -1,5 +1,6 @@
 //! X11 window-manager lifecycle and client state.
 
+mod bar;
 mod identity;
 mod keys;
 mod layout;
@@ -11,6 +12,7 @@ use x11rb::{
     rust_connection::RustConnection,
 };
 use crate::config::{Layout, BORDER_PX};
+use bar::{BarAction, SearchBar};
 
 pub struct DreamWm {
     conn: RustConnection,
@@ -26,6 +28,7 @@ pub struct DreamWm {
     layout: Layout,
     master_factor: f32,
     running: bool,
+    bar: SearchBar,
 }
 
 impl DreamWm {
@@ -48,6 +51,7 @@ impl DreamWm {
         )?
         .check()?;
 
+        let bar = SearchBar::new(&conn, root, screen_width)?;
         let mut wm = Self {
             conn,
             root,
@@ -62,6 +66,7 @@ impl DreamWm {
             layout: Layout::Tile,
             master_factor: 0.55,
             running: true,
+            bar,
         };
         wm.setup_wm_identity()?;
         wm.grab_keys()?;
@@ -113,7 +118,17 @@ impl DreamWm {
                         self.unmanage(event.window)?;
                     }
                 }
-                Event::KeyPress(event) => self.keypress(event.detail, event.state)?,
+                Event::KeyPress(event) => {
+                    if self.bar.is_active() {
+                        match self.bar.handle_key(&self.conn, event.detail, event.state.bits(), self.focused)? {
+                            BarAction::Launched(program) => SearchBar::launch(&program),
+                            BarAction::Ignored | BarAction::Updated | BarAction::Closed => {}
+                        }
+                    } else {
+                        self.keypress(event.detail, event.state)?;
+                    }
+                }
+                Event::Expose(_) => self.bar.redraw(&self.conn)?,
                 _ => {}
             }
         }
