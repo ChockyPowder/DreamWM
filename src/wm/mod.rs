@@ -122,6 +122,7 @@ impl DreamWm {
                     if self.bar.is_active() {
                         match self.bar.handle_key(&self.conn, event.detail, event.state.bits(), self.focused)? {
                             BarAction::Launched(program) => SearchBar::launch(&program),
+                            BarAction::SwitchWorkspace(workspace) => self.view_tag(workspace)?,
                             BarAction::Ignored | BarAction::Updated | BarAction::Closed => {}
                         }
                     } else {
