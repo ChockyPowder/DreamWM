@@ -31,7 +31,13 @@ impl DreamWm {
                 } else {
                     let master_width =
                         ((self.screen_width as f32) * self.master_factor) as u16;
-                    self.place(tiled[0], 0, 0, master_width, self.screen_height)?;
+                    self.place(
+                        tiled[0],
+                        0,
+                        BAR_HEIGHT as i32,
+                        master_width,
+                        self.screen_height.saturating_sub(BAR_HEIGHT),
+                    )?;
                     let stack_count = tiled.len() - 1;
                     let stack_width = self.screen_width.saturating_sub(master_width);
                     let available_height = self.screen_height.saturating_sub(BAR_HEIGHT) as usize;
