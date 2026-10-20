@@ -76,8 +76,24 @@ impl DreamWm {
             running: true,
         };
         wm.grab_keys()?;
+        wm.scan_existing()?;
         wm.conn.flush()?;
         Ok(wm)
+    }
+
+    fn scan_existing(&mut self) -> Result<(), Box<dyn Error>> {
+        // Windows already mapped before dreamWM starts will not generate
+        // MapRequest events, so adopt eligible root children here.
+        let children = self.conn.query_tree(self.root)?.reply()?.children;
+        for window in children {
+            let attributes = self.conn.get_window_attributes(window)?.reply()?;
+            if !attributes.override_redirect
+                && attributes.map_state != x11rb::protocol::xproto::MapState::UNMAPPED
+            {
+                self.manage(window)?;
+            }
+        }
+        Ok(())
     }
 
     fn grab_keys(&self) -> Result<(), Box<dyn Error>> {
