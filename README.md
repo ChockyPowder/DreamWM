@@ -46,3 +46,12 @@ The terminal command defaults to `st`; set `DREAMWM_TERMINAL` to another executa
 ## Status
 
 Early prototype. The current code has basic X11 window management, layouts, tag switching, and core keybindings. ICCCM/EWMH support, robust focus handling, configurable keysyms, and nested-X integration tests are still outstanding.
+
+## Project structure
+
+- `src/main.rs` — binary entry point and startup error reporting.
+- `src/config.rs` — layout type, default keycodes, and small configuration constants.
+- `src/wm/mod.rs` — X11 connection, window-manager lifecycle, client state, and visibility/focus handling.
+- `src/wm/keys.rs` — key grabs, keyboard actions, and launching terminal/menu processes.
+- `src/wm/layout.rs` — tile, monocle, and floating layout placement.
+- `src/wm/identity.rs` — EWMH properties used to identify dreamWM to X11 tools.
