@@ -45,6 +45,13 @@ pub(super) struct SearchBar {
     previous_cpu: Option<(u64, u64)>,
     cpu_history: Vec<u8>,
     status: String,
+    cpu_segment: String,
+    slow_segment: String,
+    visualizer: String,
+    cava_rx: Option<Receiver<Vec<u8>>>,
+    cava_child: Option<Child>,
+    last_cpu_sample: Instant,
+    last_slow_sample: Instant,
 }
 
 impl SearchBar {
@@ -81,12 +88,15 @@ impl SearchBar {
             window, gc, width, active: false, query: String::new(),
             matches: Vec::new(), selected: 0, programs, current_workspace: 0,
             previous_cpu: None, cpu_history: vec![0; 16], status: String::new(),
+            cpu_segment: "CPU ................   0%".to_string(),
+            slow_segment: String::new(),
             visualizer: "............".to_string(),
             cava_rx: None, cava_child: None,
             last_cpu_sample: Instant::now(), last_slow_sample: Instant::now() - Duration::from_secs(2),
         };
         bar.refresh_matches();
-        bar.sample_status();
+        bar.start_visualizer();
+        bar.sample_status(true, true);
         bar.redraw(conn)?;
         Ok(bar)
     }
