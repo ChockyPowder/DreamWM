@@ -1,5 +1,7 @@
 //! Window placement algorithms.
 
+use std::error::Error;
+
 use x11rb::{connection::Connection, protocol::xproto::{ConfigureWindowAux, ConnectionExt as _, Window}};
 use crate::config::{Layout, BORDER_PX};
 use super::DreamWm;
