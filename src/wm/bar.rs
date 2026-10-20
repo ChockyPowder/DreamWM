@@ -8,7 +8,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::mpsc::{self, Receiver},
     thread,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
 use x11rb::{
     connection::Connection,
@@ -317,11 +317,10 @@ impl SearchBar {
             self.slow_segment = format!("{battery_segment}MEM {memory}  VOL {volume}  {}  {clock}", self.visualizer);
         } else if !self.slow_segment.is_empty() {
             // Update only the visualizer between one-second status refreshes.
-            let mut segments: Vec<String> = self.slow_segment.split("  ").map(str::to_string).collect();
-            if segments.len() >= 4 {
-                let visualizer_index = segments.len() - 2;
-                segments[visualizer_index] = self.visualizer.clone();
-                self.slow_segment = segments.join("  ");
+            if let Some((before_clock, clock)) = self.slow_segment.rsplit_once("  ") {
+                if let Some((before_visualizer, _)) = before_clock.rsplit_once("  ") {
+                    self.slow_segment = format!("{before_visualizer}  {}  {clock}", self.visualizer);
+                }
             }
         }
         self.status = format!("{}  {}", self.cpu_segment, self.slow_segment);
@@ -474,6 +473,16 @@ impl SearchBar {
         match Command::new(program).spawn() {
             Ok(_) => {}
             Err(error) => eprintln!("dreamWM: couldn't launch {program}: {error}"),
+        }
+    }
+}
+
+
+impl Drop for SearchBar {
+    fn drop(&mut self) {
+        if let Some(child) = self.cava_child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }
