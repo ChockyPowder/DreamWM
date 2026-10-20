@@ -197,6 +197,10 @@ impl DreamWm {
                 )?;
             }
         }
+        self.conn.configure_window(
+            self.bar.window_id(),
+            &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+        )?;
         self.conn.flush()?;
         Ok(())
     }
