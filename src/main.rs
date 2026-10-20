@@ -4,16 +4,15 @@ use x11rb::{
     connection::Connection,
     protocol::{
         xproto::{
-            self, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _,
-            EventMask, GrabMode, InputFocus, ModMask, StackMode, Window,
+            ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _,
+            EventMask, GrabMode, InputFocus, KeyButMask, ModMask, StackMode, Window,
         },
         Event,
     },
     rust_connection::RustConnection,
-    NONE,
 };
 
-const BORDER_PX: u32 = 2;
+const BORDER_PX: u16 = 2;
 const MASTER_FACTOR: f32 = 0.55;
 const MIN_SIZE: u16 = 1;
 
@@ -144,7 +143,7 @@ impl DreamWm {
 
         self.conn.configure_window(
             window,
-            &ConfigureWindowAux::new().border_width(BORDER_PX),
+            &ConfigureWindowAux::new().border_width(BORDER_PX as u32),
         )?;
         self.conn.change_window_attributes(
             window,
@@ -172,9 +171,9 @@ impl DreamWm {
     fn focus(&mut self, window: Option<Window>) -> Result<(), Box<dyn Error>> {
         self.focused = window;
         if let Some(window) = window {
-            self.conn.configure_window(
+            self.conn.change_window_attributes(
                 window,
-                &ConfigureWindowAux::new().border_pixel(0x8fbcbb),
+                &ChangeWindowAttributesAux::new().border_pixel(0x8fbcbb),
             )?;
             self.conn.set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?;
             self.conn.configure_window(
@@ -184,9 +183,9 @@ impl DreamWm {
         }
         for &client in &self.clients {
             if Some(client) != window {
-                self.conn.configure_window(
+                self.conn.change_window_attributes(
                     client,
-                    &ConfigureWindowAux::new().border_pixel(0x444444),
+                    &ChangeWindowAttributesAux::new().border_pixel(0x444444),
                 )?;
             }
         }
@@ -194,8 +193,8 @@ impl DreamWm {
         Ok(())
     }
 
-    fn keypress(&mut self, keycode: u8, state: ModMask) -> Result<(), Box<dyn Error>> {
-        if !state.contains(ModMask::M4) {
+    fn keypress(&mut self, keycode: u8, state: KeyButMask) -> Result<(), Box<dyn Error>> {
+        if !state.contains(KeyButMask::MOD4) {
             return Ok(());
         }
         match keycode {
@@ -307,7 +306,7 @@ impl DreamWm {
                 .y(y)
                 .width(width.saturating_sub(BORDER_PX * 2) as u32)
                 .height(height.saturating_sub(BORDER_PX * 2) as u32)
-                .border_width(BORDER_PX),
+                .border_width(BORDER_PX as u32),
         )?;
         Ok(())
     }
