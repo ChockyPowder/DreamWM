@@ -249,7 +249,7 @@ impl SearchBar {
             loop {
                 match reader.read_exact(&mut byte) {
                     Ok(()) => {
-                        if byte[0] == b';' || byte[0] == b'\\n' || byte[0] == b'\\r' {
+                        if byte[0] == b';' || byte[0] == b'\n' || byte[0] == b'\r' {
                             if !token.is_empty() {
                                 let value = std::str::from_utf8(&token).ok()
                                     .and_then(|s| s.trim().parse::<u8>().ok())
