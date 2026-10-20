@@ -10,7 +10,7 @@ use x11rb::{
     protocol::{xproto::{ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _, EventMask, InputFocus, StackMode, Window}, Event},
     rust_connection::RustConnection,
 };
-use crate::config::{Layout, BORDER_PX, TAG_COUNT};
+use crate::config::{Layout, BORDER_PX};
 
 pub struct DreamWm {
     conn: RustConnection,
