@@ -43,6 +43,27 @@ The initial bindings follow the conventional `dwm` defaults, using **Alt (Mod1)*
 
 The terminal command defaults to `st`; set `DREAMWM_TERMINAL` to another executable if desired (for example, `DREAMWM_TERMINAL=xterm`). The built-in dream search scans executable programs in `PATH`; type to filter, use Up/Down or Tab to select, Enter to launch, and Esc to close search. The top bar stays visible when search is closed. Keyboard keycodes currently assume the conventional US XKB layout. dreamWM publishes `_NET_SUPPORTING_WM_CHECK` and `_NET_WM_NAME` so X11 utilities can identify the window manager.
 
+## Reducing screen tearing
+
+DreamWM is an X11 window manager, not a compositor. It cannot by itself synchronize every application's rendering to the display's vertical refresh. Run a compositor with VSync to reduce tearing; this repository includes a Picom configuration tuned for that purpose.
+
+On Gentoo, install Picom:
+
+```sh
+sudo emerge --ask x11-misc/picom
+mkdir -p ~/.config/picom
+cp config/picom.conf ~/.config/picom/picom.conf
+```
+
+Start Picom as part of your graphical session, **before** DreamWM. For a session started with `startx`, add this to `~/.xinitrc` before the command that launches DreamWM:
+
+```sh
+picom --config "$HOME/.config/picom/picom.conf" &
+exec dreamwm
+```
+
+If DreamWM is launched by a display manager, configure Picom in that session's autostart instead. Do not start a second compositor if your desktop session already runs one. The config uses the GLX backend, enables VSync, disables fullscreen unredirection, and disables damage tracking to avoid common tearing cases. Driver and hardware behavior varies; if tearing persists, check your GPU driver and compositor logs as well.
+
 ## Status
 
 Early prototype. The current code has basic X11 window management, layouts, tag switching, and core keybindings. ICCCM/EWMH support, robust focus handling, configurable keysyms, and nested-X integration tests are still outstanding.
