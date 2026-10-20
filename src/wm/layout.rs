@@ -2,13 +2,19 @@
 
 use std::error::Error;
 
-use x11rb::{connection::Connection, protocol::xproto::{ConfigureWindowAux, ConnectionExt as _, Window}};
+use x11rb::{connection::Connection, protocol::xproto::{ConfigureWindowAux, ConnectionExt as _, StackMode, Window}};
 use crate::config::{Layout, BORDER_PX};
 use super::{bar::BAR_HEIGHT, DreamWm};
 
 impl DreamWm {
     pub(super) fn arrange(&mut self) -> Result<(), Box<dyn Error>> {
         if self.layout == Layout::Floating {
+            self.conn.configure_window(
+                self.bar.window_id(),
+                &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+            )?;
+            self.bar.redraw(&self.conn)?;
+            self.conn.flush()?;
             return Ok(());
         }
         let tiled: Vec<Window> = self.visible_clients().into_iter()
@@ -60,6 +66,13 @@ impl DreamWm {
                 }
             }
         }
+        // Client mapping/configuration can raise an application over the bar.
+        // Re-raise and repaint it after each layout pass so it stays visible.
+        self.conn.configure_window(
+            self.bar.window_id(),
+            &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+        )?;
+        self.bar.redraw(&self.conn)?;
         self.conn.flush()?;
         Ok(())
     }
