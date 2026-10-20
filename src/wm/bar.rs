@@ -224,7 +224,7 @@ impl SearchBar {
         self.cpu_history.push(cpu_usage);
         if self.cpu_history.len() > 16 { self.cpu_history.remove(0); }
         let graph: String = self.cpu_history.iter().map(|&value| {
-            const BARS: [&str; 9] = [".", "-", "=", "=", "+", "*", "#", "#", "#"];
+            const BARS: [char; 9] = ['.', '-', '=', '+', '*', '#', '#', '#', '#'];
             BARS[((value as usize) / 13).min(8)]
         }).collect();
 
