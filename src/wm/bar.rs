@@ -20,6 +20,7 @@ pub(super) enum BarAction {
     Updated,
     Closed,
     Launched(String),
+    SwitchWorkspace(u8),
 }
 
 pub(super) struct SearchBar {
@@ -31,6 +32,7 @@ pub(super) struct SearchBar {
     matches: Vec<String>,
     selected: usize,
     programs: Vec<String>,
+    current_workspace: u8,
 }
 
 impl SearchBar {
@@ -50,7 +52,7 @@ impl SearchBar {
             &CreateWindowAux::new()
                 .override_redirect(1)
                 .background_pixel(BG)
-                .event_mask(EventMask::EXPOSURE | EventMask::KEY_PRESS),
+                .event_mask(EventMask::EXPOSURE | EventMask::KEY_PRESS | EventMask::BUTTON_PRESS),
         )?;
         let font = conn.generate_id()?;
         conn.open_font(font, b"fixed")?.check()?;
@@ -65,7 +67,7 @@ impl SearchBar {
         let programs = Self::discover_programs();
         let mut bar = Self {
             window, gc, width, active: false, query: String::new(),
-            matches: Vec::new(), selected: 0, programs,
+            matches: Vec::new(), selected: 0, programs, current_workspace: 0,
         };
         bar.refresh_matches();
         bar.redraw(conn)?;
@@ -93,6 +95,23 @@ impl SearchBar {
 
     pub(super) fn is_active(&self) -> bool { self.active }
     pub(super) fn window_id(&self) -> Window { self.window }
+
+    pub(super) fn set_workspace(&mut self, conn: &RustConnection, workspace: u8) -> Result<(), Box<dyn Error>> {
+        self.current_workspace = workspace;
+        self.redraw(conn)?;
+        conn.flush()?;
+        Ok(())
+    }
+
+    pub(super) fn handle_button(&self, x: i16) -> Option<u8> {
+        // Nine clickable workspace labels, each 26 pixels wide.
+        let relative = x as i32 - 8;
+        if (0..(9 * 26)).contains(&relative) {
+            Some((relative / 26) as u8)
+        } else {
+            None
+        }
+    }
 
     pub(super) fn open(&mut self, conn: &RustConnection, root: Window) -> Result<(), Box<dyn Error>> {
         self.active = true;
@@ -190,19 +209,43 @@ impl SearchBar {
         )?;
         conn.clear_area(false, self.window, 0, 0, self.width, BAR_HEIGHT)?;
 
-        // Draw everything on one baseline. Start results after the prompt so
-        // neither the prompt nor the typed query can be overwritten.
-        let (label, color) = if self.active {
-            (format!(" dream search: {}_", self.query), ACCENT)
+        // DWM-style workspace labels at the left; the selected workspace is highlighted.
+        for workspace in 0..9u8 {
+            let x = 8 + (workspace as i16 * 26);
+            let selected = workspace == self.current_workspace;
+            conn.change_gc(
+                self.gc,
+                &ChangeGCAux::new().foreground(if selected { ACCENT } else { BG }),
+            )?;
+            conn.poly_fill_rectangle(
+                self.window,
+                self.gc,
+                &[x11rb::protocol::xproto::Rectangle {
+                    x,
+                    y: 4,
+                    width: 22,
+                    height: 20,
+                }],
+            )?;
+            conn.change_gc(
+                self.gc,
+                &ChangeGCAux::new().foreground(if selected { BG } else { FG }),
+            )?;
+            let number = (workspace + 1).to_string();
+            conn.image_text8(self.window, self.gc, x + 7, 18, number.as_bytes())?;
+        }
+
+        let label = if self.active {
+            format!("dream search: {}_", self.query)
         } else {
-            (" dreamWM   |   Alt+P: dream search".to_string(), ACCENT)
+            "dreamWM  |  Alt+P: search".to_string()
         };
-        conn.change_gc(self.gc, &ChangeGCAux::new().foreground(color))?;
-        conn.image_text8(self.window, self.gc, 10, 18, label.as_bytes())?;
+        conn.change_gc(self.gc, &ChangeGCAux::new().foreground(ACCENT))?;
+        conn.image_text8(self.window, self.gc, 250, 18, label.as_bytes())?;
 
         if self.active {
             conn.change_gc(self.gc, &ChangeGCAux::new().foreground(FG))?;
-            let mut x = 10i32 + (label.len() as i32 * 8) + 12;
+            let mut x = 250i32 + (label.len() as i32 * 8) + 12;
             for (index, program) in self.matches.iter().enumerate() {
                 let item = if index == self.selected {
                     format!("> {program}")
