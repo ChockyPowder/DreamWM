@@ -4,8 +4,8 @@ use std::{collections::{HashMap, HashSet}, error::Error};
 use x11rb::{
     connection::Connection,
     protocol::{
-        composite::{self, ConnectionExt as CompositeExt, Redirect},
-        damage::{self, ConnectionExt as DamageExt, ReportLevel},
+        composite::{self, Redirect},
+        damage::{self, ReportLevel},
         present::{self, ConnectionExt as PresentExt},
         render::{self, ConnectionExt as RenderExt, CreatePictureAux, PictOp, Pictformat},
         xproto::{ConnectionExt as XprotoExt, Pixmap, Window},
@@ -171,7 +171,7 @@ impl NativeCompositor {
         // sends IdleNotify when the buffer is safe to release.
         let result = conn.present_pixmap(
             self.overlay, pixmap, serial, NONE, NONE, 0, 0, NONE, NONE, NONE,
-            present::Option::NONE, self.last_msc.saturating_add(1), 0, 0, &[],
+            present::Option::NONE.into(), self.last_msc.saturating_add(1), 0, 0, &[],
         )?.check();
         if let Err(error) = result {
             let _ = conn.free_pixmap(pixmap);
