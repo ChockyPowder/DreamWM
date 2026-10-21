@@ -8,7 +8,7 @@ use x11rb::{
         damage::{self, ConnectionExt as DamageExt, ReportLevel},
         present::{self, ConnectionExt as PresentExt},
         render::{self, ConnectionExt as RenderExt, CreatePictureAux, PictOp, Pictformat},
-        xproto::{Pixmap, Window},
+        xproto::{ConnectionExt as XprotoExt, Pixmap, Window},
         Event,
     },
     rust_connection::RustConnection,
