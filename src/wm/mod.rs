@@ -1,6 +1,7 @@
 //! X11 window-manager lifecycle and client state.
 
 mod bar;
+mod compositor;
 mod identity;
 mod keys;
 mod layout;
@@ -13,6 +14,7 @@ use x11rb::{
 };
 use crate::config::{Layout, BORDER_PX};
 use bar::{BarAction, SearchBar};
+use compositor::NativeCompositor;
 
 pub struct DreamWm {
     conn: RustConnection,
@@ -29,6 +31,7 @@ pub struct DreamWm {
     master_factor: f32,
     running: bool,
     bar: SearchBar,
+    compositor: Option<NativeCompositor>,
 }
 
 impl DreamWm {
@@ -38,6 +41,7 @@ impl DreamWm {
         let root = screen.root;
         let screen_width = screen.width_in_pixels;
         let screen_height = screen.height_in_pixels;
+        let root_depth = screen.root_depth;
 
         // Fail immediately and clearly if another window manager owns the root.
         conn.change_window_attributes(
@@ -67,8 +71,12 @@ impl DreamWm {
             master_factor: 0.55,
             running: true,
             bar,
+            compositor: None,
         };
         wm.setup_wm_identity()?;
+        wm.compositor = NativeCompositor::new(
+            &wm.conn, screen_num, root, screen_width, screen_height, root_depth,
+        )?;
         wm.grab_keys()?;
         wm.scan_existing()?;
         wm.sync_visibility()?;
@@ -96,7 +104,16 @@ impl DreamWm {
                 last_status = Instant::now();
             }
             match self.conn.poll_for_event()? {
-                Some(event) => match event {
+                Some(event) => {
+                    let compositor_repaint = if let Some(compositor) = self.compositor.as_mut() {
+                        compositor.handle_event(&self.conn, &event)?
+                    } else { false };
+                    let wm_repaint = matches!(
+                        &event,
+                        Event::MapRequest(_) | Event::ConfigureRequest(_) | Event::DestroyNotify(_)
+                            | Event::UnmapNotify(_) | Event::MapNotify(_) | Event::ConfigureNotify(_)
+                    );
+                    match event {
                     Event::MapRequest(event) => self.manage(event.window)?,
                     Event::ConfigureRequest(event) => {
                         if self.layout == Layout::Floating
@@ -143,7 +160,13 @@ impl DreamWm {
                     }
                     Event::Expose(_) => self.bar.redraw(&self.conn)?,
                     _ => {}
-                },
+                    }
+                    if compositor_repaint || wm_repaint {
+                        if let Some(compositor) = self.compositor.as_mut() {
+                            compositor.repaint(&self.conn)?;
+                        }
+                    }
+                }
                 None => std::thread::sleep(Duration::from_millis(25)),
             }
         }
