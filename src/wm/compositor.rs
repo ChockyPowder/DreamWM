@@ -141,10 +141,14 @@ impl NativeCompositor {
             else { continue };
 
             let named = conn.generate_id()?;
-            if composite::name_window_pixmap(conn, window, named).and_then(|c| c.check()).is_err() { continue; }
+            let Ok(cookie) = composite::name_window_pixmap(conn, window, named) else { continue };
+            if cookie.check().is_err() { continue; }
             let src = conn.generate_id()?;
-            if conn.render_create_picture(src, named, fmt, &CreatePictureAux::new())
-                .and_then(|c| c.check()).is_err() {
+            let Ok(cookie) = conn.render_create_picture(src, named, fmt, &CreatePictureAux::new()) else {
+                let _ = conn.free_pixmap(named);
+                continue;
+            };
+            if cookie.check().is_err() {
                 let _ = conn.free_pixmap(named);
                 continue;
             }
@@ -183,8 +187,10 @@ impl NativeCompositor {
             live.insert(window);
             if !self.damage_by_window.contains_key(&window) {
                 let id = conn.generate_id()?;
-                if damage::create(conn, id, window, ReportLevel::NON_EMPTY).and_then(|c| c.check()).is_ok() {
-                    self.damage_by_window.insert(window, id);
+                if let Ok(cookie) = damage::create(conn, id, window, ReportLevel::NON_EMPTY) {
+                    if cookie.check().is_ok() {
+                        self.damage_by_window.insert(window, id);
+                    }
                 }
             }
         }
