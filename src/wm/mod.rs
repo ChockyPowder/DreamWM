@@ -1,6 +1,7 @@
 //! X11 window-manager lifecycle and client state.
 
 mod bar;
+mod compositor;
 mod identity;
 mod keys;
 mod layout;
@@ -69,6 +70,14 @@ impl DreamWm {
             bar,
         };
         wm.setup_wm_identity()?;
+        let compositor = compositor::CompositorCapabilities::query(&wm.conn)?;
+        eprintln!(
+            "dreamWM: native compositor prerequisites: Composite={}, DAMAGE={}, RENDER={}, Present={}",
+            compositor.composite, compositor.damage, compositor.render, compositor.present
+        );
+        if !compositor.supports_native_compositing() {
+            eprintln!("dreamWM: tear-free compositing unavailable: the X server lacks one or more required extensions");
+        }
         wm.grab_keys()?;
         wm.scan_existing()?;
         wm.sync_visibility()?;
