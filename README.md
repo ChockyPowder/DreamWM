@@ -45,7 +45,9 @@ The terminal command defaults to `st`; set `DREAMWM_TERMINAL` to another executa
 
 ## Screen tearing and compositing
 
-Native compositing is a planned core feature. The current window manager does not yet redirect and composite application windows or synchronize final-frame presentation with the display refresh, so screen tearing is **not fixed yet**. The intended implementation will live inside dreamWM rather than requiring a separate compositor process. Tear-free presentation also depends on the X server, graphics driver, and display hardware supporting the synchronization path.
+dreamWM now has an initial in-process X11 compositor using Composite for redirection, DAMAGE for redraw notifications, Render for scene composition, and Present to queue off-screen frames against the display media-stream counter (MSC). It does not require Picom. If the X server lacks one of these extensions, dreamWM falls back to its non-composited mode.
+
+This is an early implementation, not yet a guarantee of tear-free output on every machine. It needs runtime testing on a real Xorg session, including checking the Present completion mode and behavior with the active graphics driver. Tear-free presentation depends on the X server, driver, and hardware honoring synchronized presentation. Test in a nested X server or VM before using it as your daily window manager.
 
 ## Status
 
