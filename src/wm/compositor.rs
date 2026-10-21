@@ -43,6 +43,7 @@ pub(super) struct NativeCompositor {
     height: u16,
     depth: u8,
     root_format: Pictformat,
+    visual_formats: HashMap<u32, Pictformat>,
     present_event: u32,
     next_serial: u32,
     last_msc: u64,
@@ -62,9 +63,12 @@ impl NativeCompositor {
         }
         let formats = render::query_pict_formats(conn)?.reply()?;
         let screen = conn.setup().roots.get(screen_num).ok_or("invalid X11 screen index")?;
-        let root_format = formats.screens.iter().flat_map(|s| s.depths.iter())
+        let visual_formats: HashMap<u32, Pictformat> = formats.screens.iter()
+            .flat_map(|s| s.depths.iter())
             .flat_map(|d| d.visuals.iter())
-            .find(|v| v.visual == screen.root_visual).map(|v| v.format)
+            .map(|v| (v.visual, v.format))
+            .collect();
+        let root_format = *visual_formats.get(&screen.root_visual)
             .ok_or("XRender has no format for the root visual")?;
 
         // Do not redirect until all resources needed to draw a frame are known.
@@ -77,7 +81,7 @@ impl NativeCompositor {
         )?.check()?;
 
         let mut compositor = Self {
-            root, overlay, width, height, depth, root_format, present_event,
+            root, overlay, width, height, depth, root_format, visual_formats, present_event,
             next_serial: 1, last_msc: 0, pending: HashMap::new(),
             damage_by_window: HashMap::new(),
         };
@@ -117,11 +121,14 @@ impl NativeCompositor {
         conn.create_pixmap(self.depth, pixmap, self.root, self.width.max(1), self.height.max(1))?.check()?;
         let dst = conn.generate_id()?;
         conn.render_create_picture(dst, pixmap, self.root_format, &CreatePictureAux::new())?.check()?;
-        conn.render_fill_rectangles(
-            PictOp::SRC, dst,
-            render::Color { red: 0, green: 0, blue: 0, alpha: u16::MAX },
-            &[x11rb::protocol::xproto::Rectangle { x: 0, y: 0, width: self.width, height: self.height }],
+        // Copy the root drawable first so the wallpaper/background survives
+        // underneath transparent and uncovered areas of the scene.
+        let root_picture = conn.generate_id()?;
+        conn.render_create_picture(root_picture, self.root, self.root_format, &CreatePictureAux::new())?.check()?;
+        conn.render_composite(
+            PictOp::SRC, root_picture, NONE, dst, 0, 0, 0, 0, 0, 0, self.width, self.height,
         )?.check()?;
+        conn.render_free_picture(root_picture)?.check()?;
 
         // query_tree returns bottom-to-top stacking order, so later windows
         // composite over earlier ones. Each named pixmap is temporary; Present
@@ -135,10 +142,7 @@ impl NativeCompositor {
             };
             let Ok(g) = conn.get_geometry(window)?.reply() else { continue };
             if g.width == 0 || g.height == 0 { continue; }
-            let formats = render::query_pict_formats(conn)?.reply()?;
-            let Some(fmt) = formats.screens.iter().flat_map(|s| s.depths.iter())
-                .flat_map(|d| d.visuals.iter()).find(|v| v.visual == attrs.visual).map(|v| v.format)
-            else { continue };
+            let Some(&fmt) = self.visual_formats.get(&attrs.visual) else { continue };
 
             let named = conn.generate_id()?;
             let Ok(cookie) = composite::name_window_pixmap(conn, window, named) else { continue };
