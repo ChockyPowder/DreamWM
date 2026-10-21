@@ -8,7 +8,7 @@ use x11rb::{
         damage::{self, ConnectionExt as DamageExt, ReportLevel},
         present::{self, ConnectionExt as PresentExt},
         render::{self, ConnectionExt as RenderExt, CreatePictureAux, PictOp, Pictformat},
-        xproto::{ConnectionExt as XprotoExt, Drawable, Pixmap, Window},
+        xproto::{Pixmap, Window},
         Event,
     },
     rust_connection::RustConnection,
@@ -71,8 +71,8 @@ impl NativeCompositor {
         composite::redirect_subwindows(conn, root, Redirect::MANUAL)?.check()?;
         let overlay = composite::get_overlay_window(conn, root)?.reply()?.overlay_win;
         let present_event = conn.generate_id()?;
-        present::present_select_input(
-            conn, present_event, overlay,
+        conn.present_select_input(
+            present_event, overlay,
             present::EventMask::COMPLETE_NOTIFY | present::EventMask::IDLE_NOTIFY,
         )?.check()?;
 
@@ -165,8 +165,8 @@ impl NativeCompositor {
         self.next_serial = self.next_serial.wrapping_add(1).max(1);
         // Queue against the next observed media-stream counter (MSC). Present
         // sends IdleNotify when the buffer is safe to release.
-        let result = present::present_pixmap(
-            conn, self.overlay, pixmap, serial, NONE, NONE, 0, 0, NONE, NONE, NONE,
+        let result = conn.present_pixmap(
+            self.overlay, pixmap, serial, NONE, NONE, 0, 0, NONE, NONE, NONE,
             present::Option::NONE, self.last_msc.saturating_add(1), 0, 0, &[],
         )?.check();
         if let Err(error) = result {
